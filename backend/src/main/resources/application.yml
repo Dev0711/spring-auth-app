@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: auth-app
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/authdb
+    username: postgres
+    password: your_postgres_password
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: YOUR_GOOGLE_CLIENT_ID
+            client-secret: YOUR_GOOGLE_CLIENT_SECRET
+            redirect-uri: "{baseUrl}/login/oauth2/code/google"
+            scope:
+              - email
+              - profile
+              - openid
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: your_gmail@gmail.com
+    password: your_gmail_app_password
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+app:
+  jwt:
+    secret: "your-super-secret-jwt-key-must-be-at-least-256-bits-long-for-hs256"
+    expiration-ms: 86400000
+
+  otp:
+    expiry-minutes: 5
+    length: 6
+
+  frontend-url: http://localhost:5173
+
+server:
+  port: 8080
