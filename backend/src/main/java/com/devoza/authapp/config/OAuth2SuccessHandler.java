@@ -31,12 +31,29 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
                                         Authentication authentication) throws IOException {
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
         String email = oAuth2User.getAttribute("email");
+        String name = oAuth2User.getAttribute("name");
+        String pictureUrl = oAuth2User.getAttribute("picture");
+        String providerId = oAuth2User.getAttribute("sub");
 
+        log.info("OAuth2 authentication successful for email: {}", email);
+
+        // Ensure user exists in database (fallback if CustomOAuth2UserService didn't work)
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found after OAuth2 login"));
+                .orElseGet(() -> {
+                    log.info("User not found, creating in success handler: {}", email);
+                    User newUser = User.builder()
+                            .email(email)
+                            .name(name)
+                            .pictureUrl(pictureUrl)
+                            .provider(User.AuthProvider.GOOGLE)
+                            .providerId(providerId)
+                            .emailVerified(true)
+                            .build();
+                    return userRepository.save(newUser);
+                });
 
         String token = jwtUtil.generateToken(user);
-        log.info("OAuth2 login successful for user: {}", email);
+        log.info("OAuth2 login successful for user: {} (ID: {})", email, user.getId());
 
         String redirectUrl = UriComponentsBuilder.fromUriString(frontendUrl + "/oauth2/callback")
                 .queryParam("token", token)
