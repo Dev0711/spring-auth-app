@@ -8,6 +8,7 @@ import org.springframework.security.oauth2.client.userinfo.*;
 import org.springframework.security.oauth2.core.*;
 import org.springframework.security.oauth2.core.user.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 
@@ -19,10 +20,13 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
     private final UserRepository userRepository;
 
     @Override
-    @Transactional
+    // REQUIRES_NEW = start a brand new transaction, commit it fully
+    // before returning. This guarantees the user row is visible to
+    // OAuth2SuccessHandler which runs in a different thread context.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public OAuth2User loadUser(OAuth2UserRequest request) throws OAuth2AuthenticationException {
         log.info("CustomOAuth2UserService.loadUser called");
-        
+
         DefaultOAuth2UserService delegate = new DefaultOAuth2UserService();
         OAuth2User oAuth2User = delegate.loadUser(request);
 
@@ -34,35 +38,34 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
 
         log.info("Processing OAuth2 user: {}", email);
 
-        // Ensure user exists in database
-        User user = userRepository.findByEmail(email)
+        userRepository.findByEmail(email)
                 .map(existing -> updateUser(existing, name, pictureUrl))
                 .orElseGet(() -> createUser(email, name, pictureUrl, providerId));
 
-        // Force flush to ensure the user is saved immediately
-        userRepository.flush();
-
-        log.info("OAuth2 user processed and saved: {}", email);
+        // saveAndFlush guarantees an immediate INSERT/UPDATE + commit
+        // within this REQUIRES_NEW transaction before we return.
+        // OAuth2SuccessHandler will always find this user in the DB.
+        log.info("OAuth2 user saved and committed to DB: {}", email);
         return oAuth2User;
     }
 
     private User createUser(String email, String name, String picture, String providerId) {
-        log.info("Creating new user in database: {}", email);
+        log.info("Creating new OAuth2 user: {}", email);
         User user = User.builder()
-                .email(email).name(name).pictureUrl(picture)
-                .provider(User.AuthProvider.GOOGLE).providerId(providerId)
-                .emailVerified(true).build();
-        User savedUser = userRepository.save(user);
-        log.info("User created and saved: {} (ID: {})", email, savedUser.getId());
-        return savedUser;
+                .email(email)
+                .name(name)
+                .pictureUrl(picture)
+                .provider(User.AuthProvider.GOOGLE)
+                .providerId(providerId)
+                .emailVerified(true)
+                .build();
+        return userRepository.saveAndFlush(user);  // saveAndFlush = save + flush in one call
     }
 
     private User updateUser(User user, String name, String picture) {
-        log.info("Updating existing user: {}", user.getEmail());
-        user.setName(name); 
+        log.info("Updating existing OAuth2 user: {}", user.getEmail());
+        user.setName(name);
         user.setPictureUrl(picture);
-        User savedUser = userRepository.save(user);
-        log.info("User updated: {}", user.getEmail());
-        return savedUser;
+        return userRepository.saveAndFlush(user);
     }
 }

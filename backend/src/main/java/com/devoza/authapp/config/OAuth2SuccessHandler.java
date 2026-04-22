@@ -29,35 +29,41 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
                                         Authentication authentication) throws IOException {
+
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
-        String email = oAuth2User.getAttribute("email");
-        String name = oAuth2User.getAttribute("name");
+        String email      = oAuth2User.getAttribute("email");
+        String name       = oAuth2User.getAttribute("name");
         String pictureUrl = oAuth2User.getAttribute("picture");
         String providerId = oAuth2User.getAttribute("sub");
 
-        log.info("OAuth2 authentication successful for email: {}", email);
+        log.info("OAuth2SuccessHandler triggered for: {}", email);
 
-        // Ensure user exists in database (fallback if CustomOAuth2UserService didn't work)
+        // CustomOAuth2UserService already saved the user with REQUIRES_NEW
+        // transaction + saveAndFlush, so findByEmail will always succeed.
+        // orElseGet is a safety net only — it should never be reached.
         User user = userRepository.findByEmail(email)
                 .orElseGet(() -> {
-                    log.info("User not found, creating in success handler: {}", email);
-                    User newUser = User.builder()
+                    log.warn("Safety net triggered — creating user in SuccessHandler: {}", email);
+                    return userRepository.saveAndFlush(
+                        User.builder()
                             .email(email)
                             .name(name)
                             .pictureUrl(pictureUrl)
                             .provider(User.AuthProvider.GOOGLE)
                             .providerId(providerId)
                             .emailVerified(true)
-                            .build();
-                    return userRepository.save(newUser);
+                            .build()
+                    );
                 });
 
         String token = jwtUtil.generateToken(user);
-        log.info("OAuth2 login successful for user: {} (ID: {})", email, user.getId());
+        log.info("JWT generated for OAuth2 user: {} (ID: {})", email, user.getId());
 
-        String redirectUrl = UriComponentsBuilder.fromUriString(frontendUrl + "/oauth2/callback")
+        String redirectUrl = UriComponentsBuilder
+                .fromUriString(frontendUrl + "/oauth2/callback")
                 .queryParam("token", token)
-                .build().toUriString();
+                .build()
+                .toUriString();
 
         getRedirectStrategy().sendRedirect(request, response, redirectUrl);
     }
